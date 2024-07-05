@@ -236,7 +236,7 @@ def process_report(report_id, report_type, cookie):
 
 if __name__ == "__main__":
     cookies_urls = [
-        (COOKIE, "https://seller-services.wildberries.ru/ns/reports/sup-balance/api/v1/reports-weekly?limit=200&searchBy=&skip=0&type=2"),
+        (COOKIE, "https://seller-services.wildberries.ru/ns/reports/sup-balance/api/v1/reports-weekly?limit=200&searchBy=&skip=0&type=7"),
         (COOKIE_BNS, "https://seller-weekly-report.wildberries.ru/ns/reports/seller-wb-balance/api/v1/reports-weekly?limit=5&searchBy=&skip=0&type=6")
     ]
     old_reports_url = "https://seller-weekly-report.wildberries.ru/ns/realization-reports/suppliers-portal-analytics/api/v1/reports?limit=300&searchBy=&skip=0&type=2"
