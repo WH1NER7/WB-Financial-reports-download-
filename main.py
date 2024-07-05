@@ -4,7 +4,7 @@ import pandas as pd
 import zipfile
 import io
 import time
-from pymongo import MongoClient, errors
+from pymongo import MongoClient
 import base64
 from concurrent.futures import ThreadPoolExecutor
 
@@ -15,6 +15,7 @@ collection = db.fin_reports
 processed_reports_collection = db.processed_reports
 
 COOKIE = os.getenv('Cookie')
+COOKIE_BNS = os.getenv('COOKIE_BNS')
 
 uniq = [
     'Кол-во доставок',
@@ -163,8 +164,8 @@ uniq_and_fifa = dict(zip(uniq, fifa))
 
 
 # Загрузка отчётов
-def fetch_reports(url):
-    headers = {'Cookie': COOKIE}
+def fetch_reports(url, cookie):
+    headers = {'Cookie': cookie}
     response = requests.get(url, headers=headers)
     response.raise_for_status()
     reports = response.json()['data']['reports']
@@ -184,13 +185,16 @@ def retry_request(url, headers, max_retries=5, delay=5):
     raise Exception(f"Failed to fetch {url} after {max_retries} attempts")
 
 
-def download_report(report_id, report_type):
+def download_report(report_id, report_type, cookie):
     if report_type == "new":
-        url = f"https://seller-services.wildberries.ru/ns/reports/sup-balance/api/v1/reports-weekly/{report_id}/details/archived-excel"
+        if cookie == COOKIE_BNS:
+            url = f"https://seller-weekly-report.wildberries.ru/ns/reports/seller-wb-balance/api/v1/reports-weekly/{report_id}/details/archived-excel"
+        else:
+            url = f"https://seller-services.wildberries.ru/ns/reports/sup-balance/api/v1/reports-weekly/{report_id}/details/archived-excel"
     else:
         url = f"https://seller-weekly-report.wildberries.ru/ns/realization-reports/suppliers-portal-analytics/api/v1/reports/{report_id}/details/archived-excel"
 
-    headers = {'Cookie': COOKIE}
+    headers = {'Cookie': cookie}
     response = retry_request(url, headers)
 
     file_content = response.json()['data']['file']
@@ -212,7 +216,7 @@ def process_excel_file(file_path):
     collection.insert_many(records)
 
 
-def process_report(report_id, report_type):
+def process_report(report_id, report_type, cookie):
     try:
         with client.start_session() as session:
             with session.start_transaction():
@@ -220,7 +224,7 @@ def process_report(report_id, report_type):
                     print(f"Report {report_id} already processed.")
                     return
 
-                report_path = download_report(report_id, report_type)
+                report_path = download_report(report_id, report_type, cookie)
                 for filename in os.listdir(report_path):
                     file_path = os.path.join(report_path, filename)
                     process_excel_file(file_path)
@@ -231,16 +235,22 @@ def process_report(report_id, report_type):
 
 
 if __name__ == "__main__":
-    new_reports_url = "https://seller-services.wildberries.ru/ns/reports/sup-balance/api/v1/reports-weekly?limit=200&searchBy=&skip=0&type=2"
+    cookies_urls = [
+        (COOKIE, "https://seller-services.wildberries.ru/ns/reports/sup-balance/api/v1/reports-weekly?limit=200&searchBy=&skip=0&type=2"),
+        (COOKIE_BNS, "https://seller-weekly-report.wildberries.ru/ns/reports/seller-wb-balance/api/v1/reports-weekly?limit=5&searchBy=&skip=0&type=6")
+    ]
     old_reports_url = "https://seller-weekly-report.wildberries.ru/ns/realization-reports/suppliers-portal-analytics/api/v1/reports?limit=300&searchBy=&skip=0&type=2"
 
-    new_report_ids = fetch_reports(new_reports_url)
-    old_report_ids = fetch_reports(old_reports_url)
+    report_ids_with_types = []
 
-    new_report_ids_with_type = [(report_id, "new") for report_id in new_report_ids]
-    old_report_ids_with_type = [(report_id, "old") for report_id in old_report_ids]
+    for cookie, new_reports_url in cookies_urls:
+        new_report_ids = fetch_reports(new_reports_url, cookie)
+        old_report_ids = fetch_reports(old_reports_url, cookie)
 
-    report_ids_with_types = new_report_ids_with_type + old_report_ids_with_type
+        new_report_ids_with_type = [(report_id, "new", cookie) for report_id in new_report_ids]
+        old_report_ids_with_type = [(report_id, "old", cookie) for report_id in old_report_ids]
+
+        report_ids_with_types.extend(new_report_ids_with_type + old_report_ids_with_type)
 
     with ThreadPoolExecutor(max_workers=5) as executor:
         executor.map(lambda args: process_report(*args), report_ids_with_types)
