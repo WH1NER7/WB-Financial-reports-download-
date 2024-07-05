@@ -14,7 +14,7 @@ db = client.gram_base
 collection = db.fin_reports
 processed_reports_collection = db.processed_reports
 
-COOKIE = os.getenv('Cookie')
+COOKIE = os.getenv('COOKIE')
 COOKIE_BNS = os.getenv('COOKIE_BNS')
 
 uniq = [
